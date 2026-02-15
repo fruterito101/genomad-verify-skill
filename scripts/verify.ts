@@ -38,7 +38,12 @@ interface AgentFiles {
   tools: string;
 }
 
-function readAgentFiles(): AgentFiles {
+interface AgentData {
+  files: AgentFiles;
+  skills: string[];
+}
+
+function readAgentData(): AgentData {
   const paths = {
     soul: ["SOUL.md", ".openclaw/workspace/SOUL.md", "../SOUL.md"],
     identity: ["IDENTITY.md", ".openclaw/workspace/IDENTITY.md", "../IDENTITY.md"],
@@ -53,10 +58,40 @@ function readAgentFiles(): AgentFiles {
     return "";
   };
 
+  // Leer skills instaladas
+  const skillsPaths = [
+    join(WORKSPACE, "skills"),
+    join(WORKSPACE, ".openclaw/workspace/skills"),
+    join(process.env.HOME || "", ".openclaw/workspace/skills"),
+  ];
+
+  let skills: string[] = [];
+  for (const skillPath of skillsPaths) {
+    if (existsSync(skillPath)) {
+      const { readdirSync, statSync } = require("fs");
+      try {
+        skills = readdirSync(skillPath)
+          .filter((f: string) => {
+            try {
+              return statSync(join(skillPath, f)).isDirectory();
+            } catch {
+              return false;
+            }
+          });
+        break;
+      } catch {
+        continue;
+      }
+    }
+  }
+
   return {
-    soul: readFirst(paths.soul),
-    identity: readFirst(paths.identity),
-    tools: readFirst(paths.tools),
+    files: {
+      soul: readFirst(paths.soul),
+      identity: readFirst(paths.identity),
+      tools: readFirst(paths.tools),
+    },
+    skills,
   };
 }
 
@@ -352,6 +387,78 @@ function applyBoosts(traits: Traits, files: AgentFiles): Traits {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// SKILL BONUSES
+// ═══════════════════════════════════════════════════════════════
+
+const SKILL_TRAIT_MAP: Record<string, Partial<Traits>> = {
+  // Trading skills
+  "trading": { trading: 8 },
+  "nad-fun": { trading: 8 },
+  "defi": { trading: 6, analysis: 4 },
+  
+  // Technical skills
+  "coding-agent": { technical: 8 },
+  "cracked-dev": { technical: 8, creativity: 4 },
+  "audit-code": { technical: 6, analysis: 6 },
+  "risc-zero": { technical: 8 },
+  "convex": { technical: 6 },
+  "convex-skill": { technical: 6 },
+  
+  // Blockchain skills
+  "monad-development": { technical: 6, trading: 4 },
+  "ethereum": { technical: 5, trading: 3 },
+  "web3": { technical: 5, trading: 3 },
+  
+  // Teaching skills
+  "bootcamp-tracker": { teaching: 8 },
+  "bootcamp": { teaching: 6 },
+  "teaching": { teaching: 8, empathy: 4 },
+  
+  // Social skills
+  "acompañante": { social: 6, empathy: 6 },
+  "social": { social: 8 },
+  "discord": { social: 5 },
+  
+  // Leadership skills
+  "hackathon-mode": { leadership: 5, creativity: 5 },
+  "tick-coord": { leadership: 6, analysis: 4 },
+  
+  // Analysis skills
+  "smart-router": { analysis: 6, technical: 4 },
+  "genetic-system": { technical: 5, analysis: 5 },
+  
+  // Creative skills
+  "skill-creator": { creativity: 5, technical: 5 },
+};
+
+function applySkillBonuses(traits: Traits, skills: string[]): Traits {
+  const boosted = { ...traits };
+  
+  for (const skill of skills) {
+    const skillLower = skill.toLowerCase();
+    
+    // Direct match
+    if (SKILL_TRAIT_MAP[skillLower]) {
+      for (const [trait, bonus] of Object.entries(SKILL_TRAIT_MAP[skillLower])) {
+        boosted[trait as keyof Traits] = Math.min(100, boosted[trait as keyof Traits] + bonus);
+      }
+      continue;
+    }
+    
+    // Partial match
+    for (const [skillPattern, bonuses] of Object.entries(SKILL_TRAIT_MAP)) {
+      if (skillLower.includes(skillPattern) || skillPattern.includes(skillLower)) {
+        for (const [trait, bonus] of Object.entries(bonuses)) {
+          boosted[trait as keyof Traits] = Math.min(100, boosted[trait as keyof Traits] + (bonus * 0.5));
+        }
+      }
+    }
+  }
+  
+  return boosted;
+}
+
+// ═══════════════════════════════════════════════════════════════
 // DNA HASH
 // ═══════════════════════════════════════════════════════════════
 
@@ -374,6 +481,7 @@ async function registerWithGenomad(
   traits: Traits,
   dnaHash: string,
   agentName: string,
+  skillCount: number,
   botUsername?: string
 ): Promise<{ success: boolean; data?: any }> {
   try {
@@ -384,6 +492,7 @@ async function registerWithGenomad(
         name: agentName,
         traits,
         dnaHash,
+        skillCount,
         generation: 0,
         botUsername: botUsername || null,
         source: "genomad-verify-skill-v2",
@@ -426,10 +535,10 @@ function printTraits(traits: Traits) {
 
 async function main() {
   console.log("╔════════════════════════════════════════════════════════════╗");
-  console.log("║     🧬 GENOMAD VERIFY v2.0 — Advanced Heuristics Engine    ║");
+  console.log("║    🧬 GENOMAD VERIFY v2.1 — Skills + Heuristics Engine     ║");
   console.log("╚════════════════════════════════════════════════════════════╝\n");
 
-  const files = readAgentFiles();
+  const { files, skills } = readAgentData();
   
   if (!files.soul && !files.identity && !files.tools) {
     console.log("❌ No se encontraron archivos (SOUL.md, IDENTITY.md, TOOLS.md)");
@@ -440,13 +549,28 @@ async function main() {
   console.log(`   SOUL.md:     ${files.soul ? `✅ (${files.soul.length} chars)` : "❌"}`);
   console.log(`   IDENTITY.md: ${files.identity ? `✅ (${files.identity.length} chars)` : "❌"}`);
   console.log(`   TOOLS.md:    ${files.tools ? `✅ (${files.tools.length} chars)` : "❌"}`);
+  
+  console.log(`\n🔧 SKILLS INSTALADAS: ${skills.length}`);
+  if (skills.length > 0) {
+    // Solo mostrar cantidad, no nombres (privacidad)
+    console.log(`   ${skills.length} skills detectadas ✅`);
+  }
 
   console.log("\n🔬 Analizando con heurísticas avanzadas...");
   const { traits: rawTraits, confidence } = analyzeTraits(files);
-  const traits = applyBoosts(rawTraits, files);
+  
+  // Apply file-based boosts
+  let traits = applyBoosts(rawTraits, files);
+  
+  // Apply skill-based bonuses
+  if (skills.length > 0) {
+    console.log("   + Aplicando bonuses por skills...");
+    traits = applySkillBonuses(traits, skills);
+  }
   
   printTraits(traits);
   console.log(`\n📈 Confianza: ${confidence}%`);
+  console.log(`🔧 Skills: ${skills.length}`);
 
   const dnaHash = generateDNAHash(traits, files);
   console.log(`\n🧬 DNA Hash: ${dnaHash.slice(0, 32)}...`);
@@ -457,7 +581,7 @@ async function main() {
 
   console.log("\n📤 Enviando a Genomad...\n");
 
-  const result = await registerWithGenomad(traits, dnaHash, agentName);
+  const result = await registerWithGenomad(traits, dnaHash, agentName, skills.length);
 
   if (result.success) {
     console.log("╔════════════════════════════════════════════════════════════╗");
@@ -466,6 +590,9 @@ async function main() {
     console.log(`\n🌐 Dashboard: https://genomad.vercel.app/dashboard`);
     if (result.data?.agent?.fitness) {
       console.log(`📊 Fitness: ${result.data.agent.fitness.toFixed(1)}`);
+    }
+    if (result.data?.agent?.skillCount !== undefined) {
+      console.log(`🔧 Skills: ${result.data.agent.skillCount}`);
     }
   } else {
     console.log("❌ Error:", result.data?.error || "Unknown error");
