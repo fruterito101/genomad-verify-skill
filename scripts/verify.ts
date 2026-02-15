@@ -117,7 +117,7 @@ async function registerWithGenomad(
   agentName: string
 ): Promise<boolean> {
   try {
-    const response = await fetch(`${GENOMAD_API}/agents/register`, {
+    const response = await fetch(`${GENOMAD_API}/agents/register-skill`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
