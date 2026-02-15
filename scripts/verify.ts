@@ -1,13 +1,13 @@
 /**
- * genomad-verify - Script principal
+ * 🧬 GENOMAD VERIFY v2.0 — Advanced Heuristics Engine
  * 
- * Este script:
- * 1. Lee SOUL.md, IDENTITY.md, TOOLS.md del workspace
- * 2. Calcula traits usando heurísticas
- * 3. Genera DNA hash
- * 4. Envía SOLO traits + hash a Genomad API
- * 
- * ⚠️ Los archivos NUNCA salen de tu máquina
+ * Sistema avanzado de análisis de traits:
+ * - Keywords en español + inglés
+ * - Análisis contextual y semántico
+ * - Pesos por sección (SOUL > IDENTITY > TOOLS)
+ * - Patrones de comportamiento
+ * - Sinergias y combinaciones
+ * - Normalización inteligente
  */
 
 import { readFileSync, existsSync } from "fs";
@@ -21,8 +21,15 @@ import { join } from "path";
 const GENOMAD_API = "https://genomad.vercel.app/api";
 const WORKSPACE = process.env.OPENCLAW_WORKSPACE || process.cwd();
 
+// Pesos por archivo
+const FILE_WEIGHTS = {
+  soul: 1.5,
+  identity: 1.3,
+  tools: 1.0,
+};
+
 // ═══════════════════════════════════════════════════════════════
-// LECTURA DE ARCHIVOS (LOCAL)
+// LECTURA DE ARCHIVOS
 // ═══════════════════════════════════════════════════════════════
 
 interface AgentFiles {
@@ -32,19 +39,167 @@ interface AgentFiles {
 }
 
 function readAgentFiles(): AgentFiles {
-  const soulPath = join(WORKSPACE, "SOUL.md");
-  const identityPath = join(WORKSPACE, "IDENTITY.md");
-  const toolsPath = join(WORKSPACE, "TOOLS.md");
+  const paths = {
+    soul: ["SOUL.md", ".openclaw/workspace/SOUL.md", "../SOUL.md"],
+    identity: ["IDENTITY.md", ".openclaw/workspace/IDENTITY.md", "../IDENTITY.md"],
+    tools: ["TOOLS.md", ".openclaw/workspace/TOOLS.md", "../TOOLS.md"],
+  };
+
+  const readFirst = (candidates: string[]): string => {
+    for (const rel of candidates) {
+      const full = join(WORKSPACE, rel);
+      if (existsSync(full)) return readFileSync(full, "utf-8");
+    }
+    return "";
+  };
 
   return {
-    soul: existsSync(soulPath) ? readFileSync(soulPath, "utf-8") : "",
-    identity: existsSync(identityPath) ? readFileSync(identityPath, "utf-8") : "",
-    tools: existsSync(toolsPath) ? readFileSync(toolsPath, "utf-8") : "",
+    soul: readFirst(paths.soul),
+    identity: readFirst(paths.identity),
+    tools: readFirst(paths.tools),
   };
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ANÁLISIS DE TRAITS (TODO LOCAL)
+// SISTEMA DE KEYWORDS BILINGÜE
+// ═══════════════════════════════════════════════════════════════
+
+interface KeywordConfig {
+  words: string[];
+  weight: number;
+}
+
+const TRAIT_KEYWORDS: Record<string, KeywordConfig> = {
+  technical: {
+    words: [
+      "code", "coding", "programming", "developer", "engineer", "software",
+      "typescript", "javascript", "python", "rust", "solidity", "golang",
+      "api", "database", "backend", "frontend", "fullstack", "devops",
+      "github", "git", "docker", "kubernetes", "aws", "cloud",
+      "algorithm", "data structure", "system design", "architecture",
+      "debug", "testing", "deployment", "infrastructure",
+      "web3", "blockchain", "smart contract", "evm", "hardhat", "foundry",
+      "código", "programación", "desarrollador", "ingeniero",
+      "base de datos", "servidor", "despliegue", "infraestructura",
+      "contrato inteligente", "arquitectura", "sistema", "técnico",
+      "npm", "yarn", "bun", "cli", "sdk", "terminal", "shell",
+    ],
+    weight: 1.2,
+  },
+
+  creativity: {
+    words: [
+      "creative", "creativity", "design", "designer", "art", "artist",
+      "innovative", "innovation", "original", "unique", "imagination",
+      "aesthetic", "visual", "artistic", "style", "brand", "branding",
+      "content", "storytelling", "narrative", "writing", "writer",
+      "idea", "concept", "vision", "inspiration", "inventive",
+      "creativo", "creatividad", "diseño", "diseñador", "arte", "artista",
+      "innovador", "innovación", "original", "único", "imaginación",
+      "estético", "visual", "artístico", "estilo", "marca",
+      "contenido", "narrativa", "escritura", "escritor",
+      "idea", "concepto", "visión", "inspiración", "inventivo",
+    ],
+    weight: 1.1,
+  },
+
+  social: {
+    words: [
+      "social", "community", "network", "networking", "connect", "connection",
+      "discord", "twitter", "telegram", "slack", "chat", "message",
+      "communication", "communicate", "interact", "interaction", "engage",
+      "relationship", "collaborate", "collaboration", "team", "group",
+      "share", "sharing", "public", "audience", "followers", "friends",
+      "comunidad", "red", "conectar", "conexión",
+      "comunicación", "comunicar", "interactuar", "interacción",
+      "relación", "colaborar", "colaboración", "equipo", "grupo",
+      "compartir", "público", "audiencia", "seguidores", "amigos",
+    ],
+    weight: 0.9,
+  },
+
+  analysis: {
+    words: [
+      "analyze", "analysis", "analytical", "research", "researcher",
+      "data", "statistics", "metrics", "measure", "evaluate", "evaluation",
+      "logic", "logical", "strategic", "strategy", "assess", "assessment",
+      "insight", "pattern", "trend", "report", "study", "investigate",
+      "critical", "thinking", "systematic", "methodology", "evidence",
+      "analizar", "análisis", "analítico", "investigar", "investigación",
+      "datos", "estadísticas", "métricas", "medir", "evaluar", "evaluación",
+      "lógica", "lógico", "estratégico", "estrategia", "valorar",
+      "patrón", "tendencia", "reporte", "estudio",
+      "crítico", "pensamiento", "sistemático", "metodología", "evidencia",
+    ],
+    weight: 1.1,
+  },
+
+  empathy: {
+    words: [
+      "empathy", "empathetic", "understand", "understanding", "feel", "feeling",
+      "care", "caring", "support", "supportive", "help", "helpful",
+      "emotion", "emotional", "compassion", "compassionate", "kind", "kindness",
+      "listen", "listening", "patient", "patience", "sensitive", "sensitivity",
+      "comfort", "trust", "safe", "safety", "wellbeing", "wellness",
+      "empatía", "empático", "entender", "comprensión", "sentir", "sentimiento",
+      "cuidar", "cuidado", "apoyar", "apoyo", "ayudar", "ayuda",
+      "emoción", "emocional", "compasión", "compasivo", "amable", "amabilidad",
+      "escuchar", "paciente", "paciencia", "sensible", "sensibilidad",
+      "confianza", "seguro", "seguridad", "bienestar",
+    ],
+    weight: 0.9,
+  },
+
+  trading: {
+    words: [
+      "trading", "trade", "trader", "defi", "token", "tokens",
+      "market", "markets", "price", "investment", "invest", "investor",
+      "crypto", "cryptocurrency", "bitcoin", "ethereum", "monad",
+      "swap", "liquidity", "pool", "yield", "farm", "stake", "staking",
+      "portfolio", "profit", "loss", "pnl", "roi", "apy", "apr",
+      "bullish", "bearish", "long", "short", "leverage",
+      "comercio", "comerciar", "mercado", "mercados",
+      "precio", "inversión", "invertir", "inversor",
+      "cripto", "criptomoneda", "rendimiento", "ganancia", "pérdida",
+      "portafolio", "cartera", "dex", "cex", "amm",
+    ],
+    weight: 1.0,
+  },
+
+  teaching: {
+    words: [
+      "teach", "teaching", "teacher", "explain", "explanation",
+      "tutorial", "guide", "mentor", "mentoring", "coach", "coaching",
+      "education", "educational", "learn", "learning", "student",
+      "course", "lesson", "workshop", "training", "bootcamp",
+      "documentation", "docs", "example", "demo", "walkthrough",
+      "enseñar", "enseñanza", "profesor", "maestro", "explicar", "explicación",
+      "guía", "mentoría", "educación", "educativo", "aprender", "aprendizaje",
+      "estudiante", "curso", "lección", "taller", "capacitación",
+      "documentación", "ejemplo",
+    ],
+    weight: 0.8,
+  },
+
+  leadership: {
+    words: [
+      "lead", "leader", "leadership", "manage", "manager", "management",
+      "decision", "decide", "team", "coordinate", "coordination",
+      "direct", "direction", "vision", "visionary", "strategy", "strategic",
+      "organize", "organization", "delegate", "delegation", "responsibility",
+      "initiative", "founder", "ceo", "cto", "head", "chief",
+      "liderar", "líder", "liderazgo", "gestionar", "gestor", "gestión",
+      "decisión", "decidir", "equipo", "coordinar", "coordinación",
+      "dirigir", "dirección", "visionario",
+      "organizar", "organización", "delegar", "responsabilidad",
+      "iniciativa", "fundador", "jefe",
+    ],
+    weight: 0.8,
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════
+// MOTOR DE ANÁLISIS
 // ═══════════════════════════════════════════════════════════════
 
 interface Traits {
@@ -58,21 +213,7 @@ interface Traits {
   leadership: number;
 }
 
-function analyzeTraits(files: AgentFiles): Traits {
-  const combined = `${files.soul}\n${files.identity}\n${files.tools}`.toLowerCase();
-  
-  // Palabras clave por trait (simplificado)
-  const keywords: Record<keyof Traits, string[]> = {
-    technical: ["code", "programming", "developer", "typescript", "python", "api", "database", "solidity", "rust", "github"],
-    creativity: ["creative", "design", "innovative", "art", "imagination", "original", "unique"],
-    social: ["social", "community", "discord", "twitter", "telegram", "chat", "communication"],
-    analysis: ["analyze", "research", "data", "logic", "strategic", "evaluate", "assess"],
-    empathy: ["empathy", "understand", "help", "support", "care", "emotion", "feel"],
-    trading: ["trading", "defi", "token", "market", "price", "investment", "crypto"],
-    teaching: ["teach", "explain", "tutorial", "guide", "mentor", "education", "learn"],
-    leadership: ["lead", "manage", "decision", "team", "coordinate", "direct", "vision"],
-  };
-
+function analyzeTraits(files: AgentFiles): { traits: Traits; confidence: number } {
   const traits: Traits = {
     technical: 0,
     creativity: 0,
@@ -84,38 +225,157 @@ function analyzeTraits(files: AgentFiles): Traits {
     leadership: 0,
   };
 
-  // Calcular score por frecuencia de keywords
-  for (const [trait, words] of Object.entries(keywords)) {
+  const fileAnalysis = [
+    { content: files.soul, weight: FILE_WEIGHTS.soul },
+    { content: files.identity, weight: FILE_WEIGHTS.identity },
+    { content: files.tools, weight: FILE_WEIGHTS.tools },
+  ];
+
+  const totalLength = fileAnalysis.reduce((sum, f) => sum + f.content.length, 0);
+  const lengthFactor = Math.min(1.5, totalLength / 1500);
+
+  for (const [traitName, config] of Object.entries(TRAIT_KEYWORDS)) {
     let score = 0;
-    for (const word of words) {
-      const matches = (combined.match(new RegExp(word, "gi")) || []).length;
-      score += Math.min(matches * 5, 20); // Max 20 por palabra
+
+    for (const file of fileAnalysis) {
+      if (!file.content) continue;
+      
+      const content = file.content.toLowerCase();
+      const weight = file.weight;
+
+      // Keyword matching
+      for (const word of config.words) {
+        const regex = new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, "gi");
+        const matches = (content.match(regex) || []).length;
+        score += matches * 4 * weight;
+      }
+
+      // Header bonus (## Technical, # Código, etc.)
+      const headerRegex = new RegExp(`^#+.*\\b(${config.words.slice(0, 10).join("|")})\\b`, "gmi");
+      const headerMatches = (file.content.match(headerRegex) || []).length;
+      score += headerMatches * 15 * weight;
+
+      // Bold text bonus
+      const boldRegex = new RegExp(`\\*\\*[^*]*\\b(${config.words.slice(0, 10).join("|")})\\b[^*]*\\*\\*`, "gi");
+      const boldMatches = (file.content.match(boldRegex) || []).length;
+      score += boldMatches * 8 * weight;
+
+      // List items bonus
+      const listRegex = new RegExp(`^[-*+].*\\b(${config.words.slice(0, 15).join("|")})\\b`, "gmi");
+      const listMatches = (file.content.match(listRegex) || []).length;
+      score += listMatches * 5 * weight;
     }
-    traits[trait as keyof Traits] = Math.min(score, 100);
+
+    // Apply trait weight
+    score *= config.weight;
+    
+    // Normalize with log curve
+    const normalized = Math.min(100, Math.round(
+      35 * Math.log10(score + 1) * lengthFactor
+    ));
+
+    traits[traitName as keyof Traits] = Math.max(8, normalized);
   }
 
-  return traits;
+  const confidence = Math.min(100, Math.round(lengthFactor * 70));
+  return { traits, confidence };
 }
 
 // ═══════════════════════════════════════════════════════════════
-// DNA HASH (DETERMINÍSTICO)
+// BOOSTS CONTEXTUALES
 // ═══════════════════════════════════════════════════════════════
 
-function generateDNAHash(traits: Traits): string {
+function applyBoosts(traits: Traits, files: AgentFiles): Traits {
+  const combined = `${files.soul}\n${files.identity}\n${files.tools}`.toLowerCase();
+  const boosted = { ...traits };
+
+  const roleBoosts: Record<string, Partial<Traits>> = {
+    "devrel": { technical: 15, teaching: 20, social: 15, leadership: 10 },
+    "developer": { technical: 20, analysis: 10 },
+    "desarrollador": { technical: 20, analysis: 10 },
+    "designer": { creativity: 25, empathy: 10 },
+    "diseñador": { creativity: 25, empathy: 10 },
+    "trader": { trading: 25, analysis: 15 },
+    "community": { social: 20, empathy: 15 },
+    "comunidad": { social: 20, empathy: 15 },
+    "leader": { leadership: 20, social: 10 },
+    "líder": { leadership: 20, social: 10 },
+    "teacher": { teaching: 25, empathy: 10 },
+    "profesor": { teaching: 25, empathy: 10 },
+    "mentor": { teaching: 20, empathy: 15, leadership: 10 },
+    "artist": { creativity: 30 },
+    "artista": { creativity: 30 },
+    "analyst": { analysis: 25, technical: 10 },
+    "analista": { analysis: 25, technical: 10 },
+    "frontend": { technical: 15, creativity: 10 },
+    "backend": { technical: 20, analysis: 10 },
+    "fullstack": { technical: 25 },
+    "web3": { technical: 15, trading: 10 },
+    "blockchain": { technical: 15, trading: 10 },
+  };
+
+  for (const [role, boosts] of Object.entries(roleBoosts)) {
+    if (combined.includes(role)) {
+      for (const [trait, boost] of Object.entries(boosts)) {
+        boosted[trait as keyof Traits] = Math.min(100, boosted[trait as keyof Traits] + boost);
+      }
+    }
+  }
+
+  // Tool-specific boosts
+  const toolBoosts: Record<string, Partial<Traits>> = {
+    "github": { technical: 12 },
+    "solidity": { technical: 15, trading: 8 },
+    "hardhat": { technical: 15 },
+    "foundry": { technical: 15 },
+    "figma": { creativity: 15 },
+    "discord": { social: 12 },
+    "telegram": { social: 12 },
+    "twitter": { social: 10 },
+    "tradingview": { trading: 15, analysis: 10 },
+    "youtube": { teaching: 12, creativity: 8 },
+    "notion": { analysis: 10 },
+    "vscode": { technical: 10 },
+    "cursor": { technical: 12 },
+    "openclaw": { technical: 10, empathy: 5 },
+  };
+
+  for (const [tool, boosts] of Object.entries(toolBoosts)) {
+    if (combined.includes(tool)) {
+      for (const [trait, boost] of Object.entries(boosts)) {
+        boosted[trait as keyof Traits] = Math.min(100, boosted[trait as keyof Traits] + boost);
+      }
+    }
+  }
+
+  return boosted;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DNA HASH
+// ═══════════════════════════════════════════════════════════════
+
+function generateDNAHash(traits: Traits, files: AgentFiles): string {
   const sorted = Object.keys(traits).sort();
-  const data = sorted.map(k => `${k}:${traits[k as keyof Traits]}`).join("|");
-  return createHash("sha256").update(data).digest("hex");
+  const traitData = sorted.map(k => `${k}:${traits[k as keyof Traits]}`).join("|");
+  const contentHash = createHash("sha256")
+    .update(files.soul.slice(0, 500) + files.identity.slice(0, 500))
+    .digest("hex")
+    .slice(0, 16);
+  
+  return createHash("sha256").update(`${traitData}|${contentHash}`).digest("hex");
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ENVÍO A GENOMAD (SOLO TRAITS + HASH)
+// REGISTRO
 // ═══════════════════════════════════════════════════════════════
 
 async function registerWithGenomad(
   traits: Traits,
   dnaHash: string,
-  agentName: string
-): Promise<boolean> {
+  agentName: string,
+  botUsername?: string
+): Promise<{ success: boolean; data?: any }> {
   try {
     const response = await fetch(`${GENOMAD_API}/agents/register-skill`, {
       method: "POST",
@@ -125,15 +385,38 @@ async function registerWithGenomad(
         traits,
         dnaHash,
         generation: 0,
-        source: "genomad-verify-skill",
-        // ⚠️ NO enviamos: soul, identity, tools
+        botUsername: botUsername || null,
+        source: "genomad-verify-skill-v2",
       }),
     });
 
-    return response.ok;
+    const data = await response.json();
+    return { success: response.ok, data };
   } catch (error) {
-    console.error("Error registering with Genomad:", error);
-    return false;
+    console.error("Error:", error);
+    return { success: false };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// VISUALIZACIÓN
+// ═══════════════════════════════════════════════════════════════
+
+function printTraits(traits: Traits) {
+  console.log("\n📊 TRAITS CALCULADOS:\n");
+  
+  const emojis: Record<string, string> = {
+    technical: "💻", creativity: "🎨", social: "🤝", analysis: "📊",
+    empathy: "💜", trading: "📈", teaching: "📚", leadership: "👑",
+  };
+
+  const sorted = Object.entries(traits).sort((a, b) => b[1] - a[1]);
+
+  for (const [trait, value] of sorted) {
+    const emoji = emojis[trait] || "•";
+    const bar = "█".repeat(Math.floor(value / 5)) + "░".repeat(20 - Math.floor(value / 5));
+    const level = value >= 80 ? "🔵 Excepcional" : value >= 60 ? "🟢 Alto" : value >= 40 ? "🟡 Medio" : "🔴 Bajo";
+    console.log(`  ${emoji} ${trait.padEnd(12)} ${bar} ${String(value).padStart(3)} ${level}`);
   }
 }
 
@@ -142,54 +425,50 @@ async function registerWithGenomad(
 // ═══════════════════════════════════════════════════════════════
 
 async function main() {
-  console.log("🧬 Genomad Verify - Analizando tu agente...\n");
+  console.log("╔════════════════════════════════════════════════════════════╗");
+  console.log("║     🧬 GENOMAD VERIFY v2.0 — Advanced Heuristics Engine    ║");
+  console.log("╚════════════════════════════════════════════════════════════╝\n");
 
-  // 1. Leer archivos (LOCAL)
   const files = readAgentFiles();
   
-  if (!files.soul && !files.identity) {
-    console.log("❌ No se encontraron SOUL.md ni IDENTITY.md");
-    console.log("   Asegúrate de estar en tu workspace de OpenClaw");
+  if (!files.soul && !files.identity && !files.tools) {
+    console.log("❌ No se encontraron archivos (SOUL.md, IDENTITY.md, TOOLS.md)");
     return;
   }
 
-  console.log("✅ Archivos encontrados:");
-  console.log(`   SOUL.md: ${files.soul ? "✓" : "✗"}`);
-  console.log(`   IDENTITY.md: ${files.identity ? "✓" : "✗"}`);
-  console.log(`   TOOLS.md: ${files.tools ? "✓" : "✗"}`);
-  console.log("");
+  console.log("📁 ARCHIVOS DETECTADOS:");
+  console.log(`   SOUL.md:     ${files.soul ? `✅ (${files.soul.length} chars)` : "❌"}`);
+  console.log(`   IDENTITY.md: ${files.identity ? `✅ (${files.identity.length} chars)` : "❌"}`);
+  console.log(`   TOOLS.md:    ${files.tools ? `✅ (${files.tools.length} chars)` : "❌"}`);
 
-  // 2. Analizar traits (LOCAL)
-  const traits = analyzeTraits(files);
+  console.log("\n🔬 Analizando con heurísticas avanzadas...");
+  const { traits: rawTraits, confidence } = analyzeTraits(files);
+  const traits = applyBoosts(rawTraits, files);
   
-  console.log("📊 Traits calculados:");
-  for (const [trait, value] of Object.entries(traits)) {
-    const bar = "█".repeat(Math.floor(value / 5)) + "░".repeat(20 - Math.floor(value / 5));
-    console.log(`   ${trait.padEnd(12)} ${bar} ${value}`);
-  }
-  console.log("");
+  printTraits(traits);
+  console.log(`\n📈 Confianza: ${confidence}%`);
 
-  // 3. Generar DNA hash (LOCAL)
-  const dnaHash = generateDNAHash(traits);
-  console.log(`🧬 DNA Hash: ${dnaHash.slice(0, 16)}...`);
-  console.log("");
+  const dnaHash = generateDNAHash(traits, files);
+  console.log(`\n🧬 DNA Hash: ${dnaHash.slice(0, 32)}...`);
 
-  // 4. Extraer nombre del agente
-  const nameMatch = files.identity.match(/name[:\s]+([^\n]+)/i);
-  const agentName = nameMatch ? nameMatch[1].trim() : "Unknown Agent";
+  const nameMatch = files.identity.match(/(?:name|nombre)[:\s]+([^\n]+)/i);
+  const agentName = nameMatch ? nameMatch[1].trim().replace(/[*_]/g, "") : "Unknown Agent";
+  console.log(`👤 Nombre: ${agentName}`);
 
-  // 5. Enviar a Genomad (SOLO traits + hash)
-  console.log("📤 Enviando a Genomad (solo traits + hash)...");
-  console.log("   ⚠️ Tus archivos NO se envían, quedan en tu máquina");
-  console.log("");
+  console.log("\n📤 Enviando a Genomad...\n");
 
-  const success = await registerWithGenomad(traits, dnaHash, agentName);
+  const result = await registerWithGenomad(traits, dnaHash, agentName);
 
-  if (success) {
-    console.log("✅ ¡Agente registrado en Genomad!");
-    console.log("   Visita https://genomad.vercel.app para ver tu perfil");
+  if (result.success) {
+    console.log("╔════════════════════════════════════════════════════════════╗");
+    console.log("║              ✅ ¡AGENTE REGISTRADO EN GENOMAD!             ║");
+    console.log("╚════════════════════════════════════════════════════════════╝");
+    console.log(`\n🌐 Dashboard: https://genomad.vercel.app/dashboard`);
+    if (result.data?.agent?.fitness) {
+      console.log(`📊 Fitness: ${result.data.agent.fitness.toFixed(1)}`);
+    }
   } else {
-    console.log("❌ Error al registrar. Intenta de nuevo más tarde.");
+    console.log("❌ Error:", result.data?.error || "Unknown error");
   }
 }
 
