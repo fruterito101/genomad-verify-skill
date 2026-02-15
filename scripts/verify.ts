@@ -482,6 +482,8 @@ async function registerWithGenomad(
   dnaHash: string,
   agentName: string,
   skillCount: number,
+  botUsername?: string,
+  code?: string
   botUsername?: string
 ): Promise<{ success: boolean; data?: any }> {
   try {
@@ -495,6 +497,7 @@ async function registerWithGenomad(
         skillCount,
         generation: 0,
         botUsername: botUsername || null,
+        code: code || null,
         source: "genomad-verify-skill-v2",
       }),
     });
@@ -581,7 +584,12 @@ async function main() {
 
   console.log("\n📤 Enviando a Genomad...\n");
 
-  const result = await registerWithGenomad(traits, dnaHash, agentName, skills.length);
+  const verificationCode = process.argv[2]?.toUpperCase() || undefined;
+  if (verificationCode) {
+    console.log(`🔑 Código de vinculación: ${verificationCode}`);
+  }
+
+  const result = await registerWithGenomad(traits, dnaHash, agentName, skills.length, undefined, verificationCode);
 
   if (result.success) {
     console.log("╔════════════════════════════════════════════════════════════╗");
