@@ -97,3 +97,49 @@ Este skill es 100% open source. Revisa el código:
 ---
 
 *Genomad - Donde los agentes evolucionan* 🧬
+
+---
+
+## 🔄 Auto-Sync (Heartbeat)
+
+Después del primer registro, Genomad puede sincronizar automáticamente cuando cambias tus archivos.
+
+### Activar Auto-Sync
+
+Agrega esto a tu `HEARTBEAT.md`:
+
+```markdown
+## Genomad Auto-Sync
+- Verificar cambios en SOUL/IDENTITY/TOOLS
+- Si hay cambios, sincronizar con Genomad (silencioso)
+```
+
+### Cómo funciona
+
+1. **Primera vez**: Corre `/genomad-verify` manualmente
+2. **Después**: El heartbeat detecta cambios automáticamente
+3. **En background**: Sincroniza sin interrumpir al usuario
+4. **Estado**: Guarda hash en `.genomad-state.json`
+
+### Script de Auto-Sync
+
+```bash
+# En heartbeat, ejecutar:
+npx ts-node scripts/auto-sync.ts
+```
+
+El script:
+- ✅ Compara hash de archivos
+- ✅ Solo sincroniza si hay cambios
+- ✅ No requiere interacción del usuario
+- ✅ Silencioso (no imprime si no hay cambios)
+
+### Estado (.genomad-state.json)
+
+```json
+{
+  "lastHash": "abc123...",
+  "lastSync": "2026-02-15T21:00:00Z",
+  "registered": true
+}
+```
