@@ -593,6 +593,15 @@ async function main() {
     }
     if (result.data?.agent?.skillCount !== undefined) {
       console.log(`🔧 Skills: ${result.data.agent.skillCount}`);
+
+    // Configurar auto-sync después del primer registro
+    try {
+      const { setupHeartbeatSync } = require("./setup-heartbeat");
+      const { markRegistered } = require("./auto-sync");
+      setupHeartbeatSync();
+      markRegistered();
+      console.log("\n🔄 Auto-sync configurado! Cambios futuros se sincronizan automáticamente.");
+    } catch (e) { /* ignore */ }
     }
   } else {
     console.log("❌ Error:", result.data?.error || "Unknown error");
@@ -600,3 +609,25 @@ async function main() {
 }
 
 main().catch(console.error);
+
+// ═══════════════════════════════════════════════════════════════
+// POST-REGISTRO: Setup Auto-Sync
+// ═══════════════════════════════════════════════════════════════
+
+import { setupHeartbeatSync } from "./setup-heartbeat";
+import { markRegistered } from "./auto-sync";
+
+function setupAutoSync() {
+  try {
+    // Agregar a HEARTBEAT.md
+    setupHeartbeatSync();
+    // Marcar como registrado para auto-sync
+    markRegistered();
+    console.log("\n🔄 Auto-sync configurado! Los cambios se sincronizarán automáticamente.");
+  } catch (error) {
+    console.log("\n⚠️ No se pudo configurar auto-sync:", error);
+  }
+}
+
+// Llamar después de registro exitoso
+export { setupAutoSync };
