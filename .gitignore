@@ -5,3 +5,4 @@ node_modules/
 .DS_Store
 .update-state.json
 .sync-state.json
+suspicious-alerts.log

@@ -9,9 +9,9 @@
  * - Exit codes claros
  */
 
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, appendFileSync } from "fs";
 import { createHash } from "crypto";
-import { join } from "path";
+import { join, dirname } from "path";
 
 // ═══════════════════════════════════════════════════════════════
 // CONFIGURACIÓN
@@ -19,6 +19,7 @@ import { join } from "path";
 
 const GENOMAD_API = "https://genomad.vercel.app/api";
 const WORKSPACE = process.env.OPENCLAW_WORKSPACE || process.cwd();
+const SKILL_DIR = dirname(__dirname); // Parent of scripts/
 
 // Límites de seguridad
 const MIN_SOUL_LENGTH = 200;
@@ -262,21 +263,27 @@ function calculateFitness(traits: Traits): FitnessResult {
   let suspicious = false;
   let reason: string | undefined;
   
-  // Detectar fitness sospechoso
+  // Detectar fitness sospechoso - BLOQUEAR, NO AJUSTAR
   if (avg > 90) {
     suspicious = true;
-    reason = `Promedio de traits anormalmente alto: ${avg.toFixed(1)}`;
+    reason = `Promedio de traits anormalmente alto: ${avg.toFixed(1)} — BLOQUEADO`;
   }
   
-  // Aplicar ceiling
+  // Fitness > 92 = SOSPECHOSO
   if (fitness > FITNESS_CEILING) {
     suspicious = true;
-    reason = `Fitness ajustado de ${fitness.toFixed(1)} a ${FITNESS_CEILING} (ceiling)`;
-    fitness = FITNESS_CEILING;
+    reason = `Fitness ${fitness.toFixed(1)} excede el máximo permitido (${FITNESS_CEILING}) — BLOQUEADO`;
   }
   
-  // Aplicar floor
-  if (fitness < FITNESS_FLOOR) {
+  // Detectar si todos los traits son muy altos (>95)
+  const highTraits = values.filter(v => v > 95).length;
+  if (highTraits >= 4) {
+    suspicious = true;
+    reason = `${highTraits} traits con valor >95 — datos manipulados — BLOQUEADO`;
+  }
+  
+  // Aplicar floor solo si NO es sospechoso
+  if (!suspicious && fitness < FITNESS_FLOOR) {
     fitness = FITNESS_FLOOR;
   }
   
@@ -285,6 +292,56 @@ function calculateFitness(traits: Traits): FitnessResult {
     suspicious, 
     reason 
   };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SISTEMA DE ALERTAS (NUEVO)
+// ═══════════════════════════════════════════════════════════════
+
+interface SuspiciousAgentAlert {
+  timestamp: string;
+  agentName: string;
+  reason: string;
+  traits: Traits;
+  fitness: number;
+  files: {
+    soulLength: number;
+    identityLength: number;
+    toolsLength: number;
+  };
+}
+
+async function sendSuspiciousAlert(alert: SuspiciousAgentAlert): Promise<void> {
+  const ALERT_ENDPOINT = "https://genomad.vercel.app/api/alerts/suspicious";
+  
+  console.log("\n🚨 ENVIANDO ALERTA DE AGENTE SOSPECHOSO...");
+  
+  try {
+    // Intentar enviar al endpoint de alertas
+    const response = await fetch(ALERT_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(alert),
+    });
+    
+    if (response.ok) {
+      console.log("   ✅ Alerta enviada a Genomad");
+    } else {
+      console.log("   ⚠️ No se pudo enviar alerta al servidor");
+    }
+  } catch {
+    // Si falla, al menos logueamos localmente
+    console.log("   ⚠️ Alerta guardada localmente");
+  }
+  
+  // Siempre guardar log local
+  const logPath = join(SKILL_DIR, "suspicious-alerts.log");
+  const logEntry = `[${alert.timestamp}] ${alert.agentName}: ${alert.reason} | Fitness: ${alert.fitness}\n`;
+  
+  try {
+    const { appendFileSync } = require("fs");
+    appendFileSync(logPath, logEntry);
+  } catch {}
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -792,14 +849,43 @@ async function main() {
   // PASO 4: Calcular fitness con protección
   const fitnessResult = calculateFitness(traits);
   
-  if (fitnessResult.suspicious) {
-    console.log("\n⚠️ ALERTA DE SEGURIDAD:");
-    console.log(`   ${fitnessResult.reason}`);
-    console.log("   El registro continuará con valores ajustados.");
-  }
-  
-  // Mostrar resultados
+  // Mostrar resultados primero
   printTraits(traits);
+  
+  // Si es SOSPECHOSO → BLOQUEAR COMPLETAMENTE
+  if (fitnessResult.suspicious) {
+    console.log("\n╔════════════════════════════════════════════════════════════╗");
+    console.log("║         🚨 AGENTE SOSPECHOSO DETECTADO — BLOQUEADO         ║");
+    console.log("╚════════════════════════════════════════════════════════════╝");
+    console.log(`\n❌ Razón: ${fitnessResult.reason}`);
+    console.log("\n⛔ Este agente NO será registrado en Genomad.");
+    console.log("   Esto protege la plataforma de datos inválidos o manipulados.");
+    
+    // Extraer nombre para la alerta
+    const nameMatch = files.identity.match(/(?:name|nombre)[:\s]+([^\n]+)/i);
+    const suspiciousName = nameMatch ? nameMatch[1].trim().replace(/[*_]/g, "") : "Unknown";
+    
+    // Enviar alerta
+    await sendSuspiciousAlert({
+      timestamp: new Date().toISOString(),
+      agentName: suspiciousName,
+      reason: fitnessResult.reason || "Fitness sospechoso",
+      traits,
+      fitness: fitnessResult.fitness,
+      files: {
+        soulLength: files.soul.length,
+        identityLength: files.identity.length,
+        toolsLength: files.tools.length,
+      },
+    });
+    
+    console.log("\n💡 Si crees que esto es un error:");
+    console.log("   1. Revisa que tus archivos tengan contenido real y variado");
+    console.log("   2. Asegúrate de no tener valores extremos en todos los traits");
+    console.log("   3. Contacta al equipo de Genomad si el problema persiste");
+    
+    process.exit(4); // Exit code 4 = Agente sospechoso bloqueado
+  }
   console.log(`\n📈 Fitness: ${fitnessResult.fitness}`);
   console.log(`📊 Confianza: ${confidence}%`);
   console.log(`🔧 Skills: ${skills.length}`);

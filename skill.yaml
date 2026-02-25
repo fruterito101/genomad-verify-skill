@@ -1,5 +1,5 @@
 name: genomad-verify
-version: "2.5.1"
+version: "2.6.0"
 description: "Conecta tu agente OpenClaw con Genomad. Auto-update incluido."
 author: Genomad Team
 license: MIT

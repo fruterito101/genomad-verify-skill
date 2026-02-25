@@ -1,7 +1,7 @@
 ---
 name: genomad-verify
 description: Conecta tu agente OpenClaw con Genomad. Vincula tu bot a tu cuenta con un código de verificación.
-version: 2.5.0
+version: 2.6.0
 author: Genomad Team
 license: MIT
 repository: https://github.com/fruterito101/genomad-verify-skill
@@ -133,7 +133,21 @@ npx tsx ~/.openclaw/workspace/skills/genomad-verify/scripts/heartbeat-hook.ts
 | 1 | ❌ Error de validación de archivos |
 | 2 | ❌ Error de validación de traits |
 | 3 | ❌ Error de API/registro |
+| 4 | 🚨 **Agente sospechoso — BLOQUEADO** |
 | 99 | 💥 Error fatal inesperado |
+
+## 🚨 Bloqueo de Agentes Sospechosos (v2.6.0)
+
+Si se detecta un agente sospechoso:
+- ❌ **NO se sube** a la plataforma
+- 📤 Se envía alerta a Genomad
+- 📝 Se guarda log local en `suspicious-alerts.log`
+
+**Causas de bloqueo:**
+- Fitness > 92
+- Promedio de traits > 90
+- 4+ traits con valor > 95
+- Datos claramente manipulados
 
 ## 🛠️ Instalación
 
