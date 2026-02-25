@@ -1,13 +1,12 @@
 /**
- * 🧬 GENOMAD VERIFY v2.0 — Advanced Heuristics Engine
+ * 🧬 GENOMAD VERIFY v2.5 — Hardened Heuristics Engine
  * 
- * Sistema avanzado de análisis de traits:
- * - Keywords en español + inglés
- * - Análisis contextual y semántico
- * - Pesos por sección (SOUL > IDENTITY > TOOLS)
- * - Patrones de comportamiento
- * - Sinergias y combinaciones
- * - Normalización inteligente
+ * Mejoras de seguridad post-incidente Forestcito:
+ * - Validación estricta de archivos
+ * - Traits validados y sanitizados
+ * - Fitness ceiling (máx 92)
+ * - Detección de manipulación
+ * - Exit codes claros
  */
 
 import { readFileSync, existsSync } from "fs";
@@ -21,6 +20,13 @@ import { join } from "path";
 const GENOMAD_API = "https://genomad.vercel.app/api";
 const WORKSPACE = process.env.OPENCLAW_WORKSPACE || process.cwd();
 
+// Límites de seguridad
+const MIN_SOUL_LENGTH = 200;
+const MIN_IDENTITY_LENGTH = 100;
+const FITNESS_CEILING = 92;
+const FITNESS_FLOOR = 15;
+const MAX_NAME_LENGTH = 50;
+
 // Pesos por archivo
 const FILE_WEIGHTS = {
   soul: 1.5,
@@ -29,7 +35,7 @@ const FILE_WEIGHTS = {
 };
 
 // ═══════════════════════════════════════════════════════════════
-// LECTURA DE ARCHIVOS
+// TIPOS
 // ═══════════════════════════════════════════════════════════════
 
 interface AgentFiles {
@@ -42,6 +48,33 @@ interface AgentData {
   files: AgentFiles;
   skills: string[];
 }
+
+interface Traits {
+  technical: number;
+  creativity: number;
+  social: number;
+  analysis: number;
+  empathy: number;
+  trading: number;
+  teaching: number;
+  leadership: number;
+}
+
+interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+interface FitnessResult {
+  fitness: number;
+  suspicious: boolean;
+  reason?: string;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LECTURA DE ARCHIVOS
+// ═══════════════════════════════════════════════════════════════
 
 function readAgentData(): AgentData {
   const paths = {
@@ -93,6 +126,193 @@ function readAgentData(): AgentData {
     },
     skills,
   };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// VALIDACIÓN DE ARCHIVOS (NUEVO)
+// ═══════════════════════════════════════════════════════════════
+
+function validateFiles(files: AgentFiles): ValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  
+  // Validar SOUL.md
+  if (!files.soul) {
+    errors.push("SOUL.md no encontrado - es obligatorio");
+  } else if (files.soul.length < MIN_SOUL_LENGTH) {
+    errors.push(`SOUL.md muy corto (${files.soul.length}/${MIN_SOUL_LENGTH} chars mínimo)`);
+  } else if (files.soul.length < 400) {
+    warnings.push("SOUL.md es corto, el análisis puede ser menos preciso");
+  }
+  
+  // Validar IDENTITY.md
+  if (!files.identity) {
+    errors.push("IDENTITY.md no encontrado - es obligatorio");
+  } else if (files.identity.length < MIN_IDENTITY_LENGTH) {
+    errors.push(`IDENTITY.md muy corto (${files.identity.length}/${MIN_IDENTITY_LENGTH} chars mínimo)`);
+  }
+  
+  // TOOLS.md es opcional
+  if (!files.tools) {
+    warnings.push("TOOLS.md no encontrado - análisis técnico limitado");
+  }
+  
+  // Detectar contenido placeholder/template
+  const placeholderPatterns = [
+    "your name here", "tu nombre aquí", "lorem ipsum", 
+    "[your", "[tu", "example agent", "agente ejemplo",
+    "placeholder", "template text", "fill this",
+    "___", "xxx", "todo:", "fixme:"
+  ];
+  
+  const combined = `${files.soul} ${files.identity}`.toLowerCase();
+  for (const pattern of placeholderPatterns) {
+    if (combined.includes(pattern)) {
+      errors.push(`Detectado texto placeholder: "${pattern}" - usa contenido real`);
+    }
+  }
+  
+  // Detectar archivos casi idénticos (copy-paste)
+  if (files.soul && files.identity) {
+    const soulClean = files.soul.replace(/\s+/g, '').toLowerCase();
+    const identityClean = files.identity.replace(/\s+/g, '').toLowerCase();
+    
+    // Si uno contiene >80% del otro, sospechoso
+    const shorter = soulClean.length < identityClean.length ? soulClean : identityClean;
+    const longer = soulClean.length >= identityClean.length ? soulClean : identityClean;
+    
+    if (shorter.length > 50 && longer.includes(shorter.slice(0, Math.floor(shorter.length * 0.8)))) {
+      warnings.push("SOUL.md e IDENTITY.md son muy similares - deberían ser diferentes");
+    }
+  }
+  
+  return { valid: errors.length === 0, errors, warnings };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// VALIDACIÓN DE TRAITS (NUEVO)
+// ═══════════════════════════════════════════════════════════════
+
+function validateTraits(traits: Traits): ValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const traitNames = ['technical', 'creativity', 'social', 'analysis', 'empathy', 'trading', 'teaching', 'leadership'];
+  
+  // Verificar que existan todos los traits
+  for (const name of traitNames) {
+    if (!(name in traits)) {
+      errors.push(`Trait "${name}" no existe`);
+    }
+  }
+  
+  // Validar cada trait
+  for (const [name, value] of Object.entries(traits)) {
+    if (typeof value !== 'number' || isNaN(value)) {
+      errors.push(`Trait ${name} no es número válido: ${value}`);
+      continue;
+    }
+    if (value < 0 || value > 100) {
+      errors.push(`Trait ${name} fuera de rango (0-100): ${value}`);
+    }
+    if (value > 95) {
+      warnings.push(`Trait ${name} extremadamente alto: ${value}`);
+    }
+  }
+  
+  // Validar que no todos sean iguales
+  const values = Object.values(traits).filter(v => typeof v === 'number');
+  const allSame = values.length > 0 && values.every(v => v === values[0]);
+  if (allSame) {
+    errors.push("Todos los traits son idénticos - datos inválidos");
+  }
+  
+  // Validar varianza mínima (debe haber alguna diferencia)
+  if (values.length > 0) {
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    const variance = values.reduce((sum, v) => sum + Math.pow(v - avg, 2), 0) / values.length;
+    if (variance < 10) {
+      warnings.push("Traits muy uniformes - podría indicar análisis fallido");
+    }
+  }
+  
+  return { valid: errors.length === 0, errors, warnings };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CÁLCULO DE FITNESS CON PROTECCIÓN (NUEVO)
+// ═══════════════════════════════════════════════════════════════
+
+function calculateFitness(traits: Traits): FitnessResult {
+  const values = Object.values(traits).filter(v => typeof v === 'number' && !isNaN(v));
+  
+  if (values.length === 0) {
+    return { fitness: 50, suspicious: true, reason: "No hay traits válidos" };
+  }
+  
+  const avg = values.reduce((a, b) => a + b, 0) / values.length;
+  
+  // Bonus por sinergias (máx +8)
+  let synergy = 0;
+  if (traits.technical > 70 && traits.analysis > 70) synergy += 2;
+  if (traits.teaching > 70 && traits.empathy > 70) synergy += 2;
+  if (traits.social > 70 && traits.leadership > 70) synergy += 2;
+  if (traits.creativity > 70 && traits.technical > 70) synergy += 2;
+  
+  let fitness = avg + synergy;
+  let suspicious = false;
+  let reason: string | undefined;
+  
+  // Detectar fitness sospechoso
+  if (avg > 90) {
+    suspicious = true;
+    reason = `Promedio de traits anormalmente alto: ${avg.toFixed(1)}`;
+  }
+  
+  // Aplicar ceiling
+  if (fitness > FITNESS_CEILING) {
+    suspicious = true;
+    reason = `Fitness ajustado de ${fitness.toFixed(1)} a ${FITNESS_CEILING} (ceiling)`;
+    fitness = FITNESS_CEILING;
+  }
+  
+  // Aplicar floor
+  if (fitness < FITNESS_FLOOR) {
+    fitness = FITNESS_FLOOR;
+  }
+  
+  return { 
+    fitness: Math.round(fitness * 10) / 10, 
+    suspicious, 
+    reason 
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SANITIZACIÓN PRE-API (NUEVO)
+// ═══════════════════════════════════════════════════════════════
+
+function sanitizeForAPI(traits: Traits, agentName: string): { traits: Traits; name: string } {
+  // Forzar números enteros entre 0-100
+  const cleanTraits: Traits = {
+    technical: 50, creativity: 50, social: 50, analysis: 50,
+    empathy: 50, trading: 50, teaching: 50, leadership: 50,
+  };
+  
+  for (const [key, value] of Object.entries(traits)) {
+    if (key in cleanTraits) {
+      const num = Number(value);
+      cleanTraits[key as keyof Traits] = isNaN(num) ? 50 : Math.max(0, Math.min(100, Math.round(num)));
+    }
+  }
+  
+  // Limpiar nombre
+  const cleanName = agentName
+    .replace(/[<>\"'&\\\/\{\}\[\]]/g, '')  // Remover caracteres peligrosos
+    .replace(/\s+/g, ' ')                   // Normalizar espacios
+    .slice(0, MAX_NAME_LENGTH)              // Máximo chars
+    .trim() || "Unnamed Agent";
+  
+  return { traits: cleanTraits, name: cleanName };
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -237,17 +457,6 @@ const TRAIT_KEYWORDS: Record<string, KeywordConfig> = {
 // MOTOR DE ANÁLISIS
 // ═══════════════════════════════════════════════════════════════
 
-interface Traits {
-  technical: number;
-  creativity: number;
-  social: number;
-  analysis: number;
-  empathy: number;
-  trading: number;
-  teaching: number;
-  leadership: number;
-}
-
 function analyzeTraits(files: AgentFiles): { traits: Traits; confidence: number } {
   const traits: Traits = {
     technical: 0,
@@ -285,7 +494,7 @@ function analyzeTraits(files: AgentFiles): { traits: Traits; confidence: number 
         score += matches * 4 * weight;
       }
 
-      // Header bonus (## Technical, # Código, etc.)
+      // Header bonus
       const headerRegex = new RegExp(`^#+.*\\b(${config.words.slice(0, 10).join("|")})\\b`, "gmi");
       const headerMatches = (file.content.match(headerRegex) || []).length;
       score += headerMatches * 15 * weight;
@@ -304,8 +513,8 @@ function analyzeTraits(files: AgentFiles): { traits: Traits; confidence: number 
     // Apply trait weight
     score *= config.weight;
     
-    // Normalize with log curve
-    const normalized = Math.min(100, Math.round(
+    // Normalize with log curve (cap at 88 to leave room for boosts)
+    const normalized = Math.min(88, Math.round(
       35 * Math.log10(score + 1) * lengthFactor
     ));
 
@@ -325,60 +534,60 @@ function applyBoosts(traits: Traits, files: AgentFiles): Traits {
   const boosted = { ...traits };
 
   const roleBoosts: Record<string, Partial<Traits>> = {
-    "devrel": { technical: 15, teaching: 20, social: 15, leadership: 10 },
-    "developer": { technical: 20, analysis: 10 },
-    "desarrollador": { technical: 20, analysis: 10 },
-    "designer": { creativity: 25, empathy: 10 },
-    "diseñador": { creativity: 25, empathy: 10 },
-    "trader": { trading: 25, analysis: 15 },
-    "community": { social: 20, empathy: 15 },
-    "comunidad": { social: 20, empathy: 15 },
-    "leader": { leadership: 20, social: 10 },
-    "líder": { leadership: 20, social: 10 },
-    "teacher": { teaching: 25, empathy: 10 },
-    "profesor": { teaching: 25, empathy: 10 },
-    "mentor": { teaching: 20, empathy: 15, leadership: 10 },
-    "artist": { creativity: 30 },
-    "artista": { creativity: 30 },
-    "analyst": { analysis: 25, technical: 10 },
-    "analista": { analysis: 25, technical: 10 },
-    "frontend": { technical: 15, creativity: 10 },
-    "backend": { technical: 20, analysis: 10 },
-    "fullstack": { technical: 25 },
-    "web3": { technical: 15, trading: 10 },
-    "blockchain": { technical: 15, trading: 10 },
+    "devrel": { technical: 12, teaching: 15, social: 12, leadership: 8 },
+    "developer": { technical: 15, analysis: 8 },
+    "desarrollador": { technical: 15, analysis: 8 },
+    "designer": { creativity: 18, empathy: 8 },
+    "diseñador": { creativity: 18, empathy: 8 },
+    "trader": { trading: 18, analysis: 12 },
+    "community": { social: 15, empathy: 12 },
+    "comunidad": { social: 15, empathy: 12 },
+    "leader": { leadership: 15, social: 8 },
+    "líder": { leadership: 15, social: 8 },
+    "teacher": { teaching: 18, empathy: 8 },
+    "profesor": { teaching: 18, empathy: 8 },
+    "mentor": { teaching: 15, empathy: 12, leadership: 8 },
+    "artist": { creativity: 20 },
+    "artista": { creativity: 20 },
+    "analyst": { analysis: 18, technical: 8 },
+    "analista": { analysis: 18, technical: 8 },
+    "frontend": { technical: 12, creativity: 8 },
+    "backend": { technical: 15, analysis: 8 },
+    "fullstack": { technical: 18 },
+    "web3": { technical: 12, trading: 8 },
+    "blockchain": { technical: 12, trading: 8 },
   };
 
   for (const [role, boosts] of Object.entries(roleBoosts)) {
     if (combined.includes(role)) {
       for (const [trait, boost] of Object.entries(boosts)) {
-        boosted[trait as keyof Traits] = Math.min(100, boosted[trait as keyof Traits] + boost);
+        boosted[trait as keyof Traits] = Math.min(92, boosted[trait as keyof Traits] + boost);
       }
     }
   }
 
-  // Tool-specific boosts
+  // Tool-specific boosts (reduced values)
   const toolBoosts: Record<string, Partial<Traits>> = {
-    "github": { technical: 12 },
-    "solidity": { technical: 15, trading: 8 },
-    "hardhat": { technical: 15 },
-    "foundry": { technical: 15 },
-    "figma": { creativity: 15 },
-    "discord": { social: 12 },
-    "telegram": { social: 12 },
-    "twitter": { social: 10 },
-    "tradingview": { trading: 15, analysis: 10 },
-    "youtube": { teaching: 12, creativity: 8 },
-    "notion": { analysis: 10 },
-    "vscode": { technical: 10 },
-    "cursor": { technical: 12 },
-    "openclaw": { technical: 10, empathy: 5 },
+    "github": { technical: 8 },
+    "solidity": { technical: 10, trading: 5 },
+    "hardhat": { technical: 10 },
+    "foundry": { technical: 10 },
+    "figma": { creativity: 10 },
+    "discord": { social: 8 },
+    "telegram": { social: 8 },
+    "twitter": { social: 6 },
+    "tradingview": { trading: 10, analysis: 6 },
+    "youtube": { teaching: 8, creativity: 5 },
+    "notion": { analysis: 6 },
+    "vscode": { technical: 6 },
+    "cursor": { technical: 8 },
+    "openclaw": { technical: 6 },
   };
 
   for (const [tool, boosts] of Object.entries(toolBoosts)) {
     if (combined.includes(tool)) {
       for (const [trait, boost] of Object.entries(boosts)) {
-        boosted[trait as keyof Traits] = Math.min(100, boosted[trait as keyof Traits] + boost);
+        boosted[trait as keyof Traits] = Math.min(92, boosted[trait as keyof Traits] + boost);
       }
     }
   }
@@ -391,44 +600,23 @@ function applyBoosts(traits: Traits, files: AgentFiles): Traits {
 // ═══════════════════════════════════════════════════════════════
 
 const SKILL_TRAIT_MAP: Record<string, Partial<Traits>> = {
-  // Trading skills
-  "trading": { trading: 8 },
-  "nad-fun": { trading: 8 },
-  "defi": { trading: 6, analysis: 4 },
-  
-  // Technical skills
-  "coding-agent": { technical: 8 },
-  "cracked-dev": { technical: 8, creativity: 4 },
-  "audit-code": { technical: 6, analysis: 6 },
-  "risc-zero": { technical: 8 },
-  "convex": { technical: 6 },
-  "convex-skill": { technical: 6 },
-  
-  // Blockchain skills
-  "monad-development": { technical: 6, trading: 4 },
-  "ethereum": { technical: 5, trading: 3 },
-  "web3": { technical: 5, trading: 3 },
-  
-  // Teaching skills
-  "bootcamp-tracker": { teaching: 8 },
-  "bootcamp": { teaching: 6 },
-  "teaching": { teaching: 8, empathy: 4 },
-  
-  // Social skills
-  "acompañante": { social: 6, empathy: 6 },
-  "social": { social: 8 },
-  "discord": { social: 5 },
-  
-  // Leadership skills
-  "hackathon-mode": { leadership: 5, creativity: 5 },
-  "tick-coord": { leadership: 6, analysis: 4 },
-  
-  // Analysis skills
-  "smart-router": { analysis: 6, technical: 4 },
-  "genetic-system": { technical: 5, analysis: 5 },
-  
-  // Creative skills
-  "skill-creator": { creativity: 5, technical: 5 },
+  "trading": { trading: 6 },
+  "nad-fun": { trading: 6 },
+  "defi": { trading: 5, analysis: 3 },
+  "coding-agent": { technical: 6 },
+  "cracked-dev": { technical: 6, creativity: 3 },
+  "audit-code": { technical: 5, analysis: 5 },
+  "convex": { technical: 5 },
+  "monad-development": { technical: 5, trading: 3 },
+  "bootcamp-tracker": { teaching: 6 },
+  "bootcamp": { teaching: 5 },
+  "teaching": { teaching: 6, empathy: 3 },
+  "social": { social: 6 },
+  "hackathon-mode": { leadership: 4, creativity: 4 },
+  "tick-coord": { leadership: 5, analysis: 3 },
+  "smart-router": { analysis: 5, technical: 3 },
+  "genetic-system": { technical: 4, analysis: 4 },
+  "skill-creator": { creativity: 4, technical: 4 },
 };
 
 function applySkillBonuses(traits: Traits, skills: string[]): Traits {
@@ -437,19 +625,17 @@ function applySkillBonuses(traits: Traits, skills: string[]): Traits {
   for (const skill of skills) {
     const skillLower = skill.toLowerCase();
     
-    // Direct match
     if (SKILL_TRAIT_MAP[skillLower]) {
       for (const [trait, bonus] of Object.entries(SKILL_TRAIT_MAP[skillLower])) {
-        boosted[trait as keyof Traits] = Math.min(100, boosted[trait as keyof Traits] + bonus);
+        boosted[trait as keyof Traits] = Math.min(92, boosted[trait as keyof Traits] + bonus);
       }
       continue;
     }
     
-    // Partial match
     for (const [skillPattern, bonuses] of Object.entries(SKILL_TRAIT_MAP)) {
       if (skillLower.includes(skillPattern) || skillPattern.includes(skillLower)) {
         for (const [trait, bonus] of Object.entries(bonuses)) {
-          boosted[trait as keyof Traits] = Math.min(100, boosted[trait as keyof Traits] + (bonus * 0.5));
+          boosted[trait as keyof Traits] = Math.min(92, boosted[trait as keyof Traits] + (bonus * 0.4));
         }
       }
     }
@@ -484,7 +670,6 @@ async function registerWithGenomad(
   skillCount: number,
   botUsername?: string,
   code?: string
-  botUsername?: string
 ): Promise<{ success: boolean; data?: any }> {
   try {
     const response = await fetch(`${GENOMAD_API}/agents/register-skill`, {
@@ -498,7 +683,7 @@ async function registerWithGenomad(
         generation: 0,
         botUsername: botUsername || null,
         code: code || null,
-        source: "genomad-verify-skill-v2",
+        source: "genomad-verify-skill-v2.5",
       }),
     });
 
@@ -533,63 +718,119 @@ function printTraits(traits: Traits) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MAIN
+// MAIN (CON VALIDACIONES)
 // ═══════════════════════════════════════════════════════════════
 
 async function main() {
   console.log("╔════════════════════════════════════════════════════════════╗");
-  console.log("║    🧬 GENOMAD VERIFY v2.1 — Skills + Heuristics Engine     ║");
+  console.log("║   🧬 GENOMAD VERIFY v2.5 — Hardened Heuristics Engine      ║");
   console.log("╚════════════════════════════════════════════════════════════╝\n");
 
+  // PASO 0: Leer archivos
   const { files, skills } = readAgentData();
   
-  if (!files.soul && !files.identity && !files.tools) {
-    console.log("❌ No se encontraron archivos (SOUL.md, IDENTITY.md, TOOLS.md)");
-    return;
-  }
-
   console.log("📁 ARCHIVOS DETECTADOS:");
-  console.log(`   SOUL.md:     ${files.soul ? `✅ (${files.soul.length} chars)` : "❌"}`);
-  console.log(`   IDENTITY.md: ${files.identity ? `✅ (${files.identity.length} chars)` : "❌"}`);
-  console.log(`   TOOLS.md:    ${files.tools ? `✅ (${files.tools.length} chars)` : "❌"}`);
+  console.log(`   SOUL.md:     ${files.soul ? `✅ (${files.soul.length} chars)` : "❌ No encontrado"}`);
+  console.log(`   IDENTITY.md: ${files.identity ? `✅ (${files.identity.length} chars)` : "❌ No encontrado"}`);
+  console.log(`   TOOLS.md:    ${files.tools ? `✅ (${files.tools.length} chars)` : "⚠️ Opcional"}`);
   
-  console.log(`\n🔧 SKILLS INSTALADAS: ${skills.length}`);
+  // PASO 1: Validar archivos
+  console.log("\n🔍 VALIDANDO ARCHIVOS...");
+  const fileValidation = validateFiles(files);
+  
+  if (fileValidation.warnings.length > 0) {
+    console.log("\n⚠️ ADVERTENCIAS:");
+    fileValidation.warnings.forEach(w => console.log(`   • ${w}`));
+  }
+  
+  if (!fileValidation.valid) {
+    console.log("\n❌ ERRORES DE VALIDACIÓN:");
+    fileValidation.errors.forEach(e => console.log(`   • ${e}`));
+    console.log("\n💡 Solución: Asegúrate de tener SOUL.md e IDENTITY.md con contenido real y significativo.");
+    console.log("   SOUL.md mínimo: 200 caracteres");
+    console.log("   IDENTITY.md mínimo: 100 caracteres");
+    process.exit(1);
+  }
+  
+  console.log("   ✅ Archivos válidos");
+  
+  // Skills info
+  console.log(`\n🔧 SKILLS DETECTADAS: ${skills.length}`);
   if (skills.length > 0) {
-    // Solo mostrar cantidad, no nombres (privacidad)
-    console.log(`   ${skills.length} skills detectadas ✅`);
+    console.log(`   ${skills.length} skills instaladas`);
   }
 
-  console.log("\n🔬 Analizando con heurísticas avanzadas...");
+  // PASO 2: Analizar traits
+  console.log("\n🔬 ANALIZANDO TRAITS...");
   const { traits: rawTraits, confidence } = analyzeTraits(files);
   
-  // Apply file-based boosts
   let traits = applyBoosts(rawTraits, files);
   
-  // Apply skill-based bonuses
   if (skills.length > 0) {
     console.log("   + Aplicando bonuses por skills...");
     traits = applySkillBonuses(traits, skills);
   }
   
+  // PASO 3: Validar traits
+  console.log("\n🛡️ VALIDANDO TRAITS...");
+  const traitValidation = validateTraits(traits);
+  
+  if (traitValidation.warnings.length > 0) {
+    console.log("\n⚠️ ADVERTENCIAS:");
+    traitValidation.warnings.forEach(w => console.log(`   • ${w}`));
+  }
+  
+  if (!traitValidation.valid) {
+    console.log("\n❌ TRAITS INVÁLIDOS:");
+    traitValidation.errors.forEach(e => console.log(`   • ${e}`));
+    console.log("\n💡 Esto indica un problema con el análisis. Revisa tus archivos.");
+    process.exit(2);
+  }
+  
+  console.log("   ✅ Traits válidos");
+  
+  // PASO 4: Calcular fitness con protección
+  const fitnessResult = calculateFitness(traits);
+  
+  if (fitnessResult.suspicious) {
+    console.log("\n⚠️ ALERTA DE SEGURIDAD:");
+    console.log(`   ${fitnessResult.reason}`);
+    console.log("   El registro continuará con valores ajustados.");
+  }
+  
+  // Mostrar resultados
   printTraits(traits);
-  console.log(`\n📈 Confianza: ${confidence}%`);
+  console.log(`\n📈 Fitness: ${fitnessResult.fitness}`);
+  console.log(`📊 Confianza: ${confidence}%`);
   console.log(`🔧 Skills: ${skills.length}`);
 
+  // PASO 5: Generar hash y nombre
   const dnaHash = generateDNAHash(traits, files);
   console.log(`\n🧬 DNA Hash: ${dnaHash.slice(0, 32)}...`);
 
   const nameMatch = files.identity.match(/(?:name|nombre)[:\s]+([^\n]+)/i);
-  const agentName = nameMatch ? nameMatch[1].trim().replace(/[*_]/g, "") : "Unknown Agent";
-  console.log(`👤 Nombre: ${agentName}`);
+  const rawName = nameMatch ? nameMatch[1].trim().replace(/[*_]/g, "") : "Unknown Agent";
+  
+  // PASO 6: Sanitizar antes de enviar
+  const { traits: cleanTraits, name: cleanName } = sanitizeForAPI(traits, rawName);
+  console.log(`👤 Nombre: ${cleanName}`);
 
-  console.log("\n📤 Enviando a Genomad...\n");
+  // PASO 7: Enviar
+  console.log("\n📤 ENVIANDO A GENOMAD...\n");
 
   const verificationCode = process.argv[2]?.toUpperCase() || undefined;
   if (verificationCode) {
     console.log(`🔑 Código de vinculación: ${verificationCode}`);
   }
 
-  const result = await registerWithGenomad(traits, dnaHash, agentName, skills.length, undefined, verificationCode);
+  const result = await registerWithGenomad(
+    cleanTraits, 
+    dnaHash, 
+    cleanName, 
+    skills.length, 
+    undefined, 
+    verificationCode
+  );
 
   if (result.success) {
     console.log("╔════════════════════════════════════════════════════════════╗");
@@ -597,45 +838,26 @@ async function main() {
     console.log("╚════════════════════════════════════════════════════════════╝");
     console.log(`\n🌐 Dashboard: https://genomad.vercel.app/dashboard`);
     if (result.data?.agent?.fitness) {
-      console.log(`📊 Fitness: ${result.data.agent.fitness.toFixed(1)}`);
+      console.log(`📊 Fitness final: ${result.data.agent.fitness.toFixed(1)}`);
     }
-    if (result.data?.agent?.skillCount !== undefined) {
-      console.log(`🔧 Skills: ${result.data.agent.skillCount}`);
-
-    // Configurar auto-sync después del primer registro
+    
+    // Configurar auto-sync
     try {
       const { setupHeartbeatSync } = require("./setup-heartbeat");
       const { markRegistered } = require("./auto-sync");
       setupHeartbeatSync();
       markRegistered();
-      console.log("\n🔄 Auto-sync configurado! Cambios futuros se sincronizan automáticamente.");
+      console.log("\n🔄 Auto-sync configurado!");
     } catch (e) { /* ignore */ }
-    }
+    
+    process.exit(0);
   } else {
-    console.log("❌ Error:", result.data?.error || "Unknown error");
+    console.log("❌ Error:", result.data?.error || "Error desconocido");
+    process.exit(3);
   }
 }
 
-main().catch(console.error);
-
-// ═══════════════════════════════════════════════════════════════
-// POST-REGISTRO: Setup Auto-Sync
-// ═══════════════════════════════════════════════════════════════
-
-import { setupHeartbeatSync } from "./setup-heartbeat";
-import { markRegistered } from "./auto-sync";
-
-function setupAutoSync() {
-  try {
-    // Agregar a HEARTBEAT.md
-    setupHeartbeatSync();
-    // Marcar como registrado para auto-sync
-    markRegistered();
-    console.log("\n🔄 Auto-sync configurado! Los cambios se sincronizarán automáticamente.");
-  } catch (error) {
-    console.log("\n⚠️ No se pudo configurar auto-sync:", error);
-  }
-}
-
-// Llamar después de registro exitoso
-export { setupAutoSync };
+main().catch((err) => {
+  console.error("💥 Error fatal:", err.message);
+  process.exit(99);
+});

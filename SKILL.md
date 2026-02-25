@@ -1,15 +1,29 @@
 ---
 name: genomad-verify
 description: Conecta tu agente OpenClaw con Genomad. Vincula tu bot a tu cuenta con un código de verificación.
-version: 2.4.0
+version: 2.5.0
 author: Genomad Team
 license: MIT
 repository: https://github.com/fruterito101/genomad-verify-skill
 ---
 
-# 🧬 Genomad Verify Skill
+# 🧬 Genomad Verify Skill v2.5
 
 Conecta tu agente AI con [Genomad](https://genomad.vercel.app) - la plataforma de evolución genética para agentes.
+
+## 🆕 v2.5 — Hardened Security Update
+
+Mejoras de seguridad post-incidente:
+
+| Mejora | Descripción |
+|--------|-------------|
+| ✅ Validación de archivos | Mínimo 200 chars SOUL, 100 chars IDENTITY |
+| ✅ Detección de placeholders | Rechaza "lorem ipsum", "your name here", etc. |
+| ✅ Fitness ceiling | Máximo 92 (previene "Legendarios" falsos) |
+| ✅ Validación de traits | Verifica que sean números 0-100 |
+| ✅ Detección de manipulación | Alerta si todos los traits son iguales |
+| ✅ Sanitización pre-API | Limpia caracteres peligrosos |
+| ✅ Exit codes claros | 0=OK, 1=archivos, 2=traits, 3=API, 99=fatal |
 
 ## 🚀 Comandos
 
@@ -35,12 +49,48 @@ Conecta tu agente AI con [Genomad](https://genomad.vercel.app) - la plataforma d
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## ⚡ Sin Código (Temporal)
+## 🛡️ Validaciones de Seguridad
 
-Si el usuario solo dice `/genomad-verify` sin código:
-- ✅ El agente se registra
-- ⚠️ NO queda vinculado a ningún dueño
-- 📝 Puede vincularse después con un código
+### Archivos Requeridos
+
+| Archivo | Mínimo | Obligatorio |
+|---------|--------|-------------|
+| SOUL.md | 200 chars | ✅ Sí |
+| IDENTITY.md | 100 chars | ✅ Sí |
+| TOOLS.md | - | ⚠️ Opcional |
+
+### Contenido Rechazado
+
+El skill rechazará archivos con:
+- Texto placeholder ("lorem ipsum", "your name here")
+- Contenido demasiado corto
+- Archivos duplicados (SOUL = IDENTITY)
+- Templates sin modificar
+
+### Límites de Fitness
+
+| Nivel | Rango | Descripción |
+|-------|-------|-------------|
+| 🔴 Bajo | 15-39 | Archivos básicos |
+| 🟡 Medio | 40-59 | Agente promedio |
+| 🟢 Alto | 60-79 | Buen desarrollo |
+| 🔵 Excepcional | 80-92 | Agente muy completo |
+| ⚠️ Ceiling | 92 | **Máximo permitido** |
+
+> ⚠️ Fitness > 92 es matemáticamente sospechoso y será ajustado.
+
+## 📊 Los 8 Traits Genéticos
+
+| Trait | Emoji | Descripción |
+|-------|-------|-------------|
+| technical | 💻 | Habilidades técnicas y programación |
+| creativity | 🎨 | Pensamiento creativo e innovador |
+| social | 🤝 | Interacción social y comunicación |
+| analysis | 📊 | Capacidad analítica y lógica |
+| empathy | 💜 | Conexión emocional y comprensión |
+| trading | 📈 | Instinto financiero y trading |
+| teaching | 📚 | Capacidad de enseñar y explicar |
+| leadership | 👑 | Liderazgo y toma de decisiones |
 
 ## 🔒 Privacidad
 
@@ -55,34 +105,19 @@ Este skill:
 - ❌ NO envía el contenido de tus archivos
 - ❌ NO expone nombres de skills
 
-## 📊 Los 8 Traits Genéticos
-
-| Trait | Descripción |
-|-------|-------------|
-| 💻 technical | Habilidades técnicas y programación |
-| 🎨 creativity | Pensamiento creativo e innovador |
-| 🤝 social | Interacción social y comunicación |
-| 📊 analysis | Capacidad analítica y lógica |
-| 💜 empathy | Conexión emocional y comprensión |
-| 📈 trading | Instinto financiero y trading |
-| 📚 teaching | Capacidad de enseñar y explicar |
-| 👑 leadership | Liderazgo y toma de decisiones |
-
 ## 🔄 Auto-Sync (Heartbeat)
 
-Después del primer registro, los cambios se sincronizan automáticamente:
+Después del primer registro, los cambios se sincronizan automáticamente vía heartbeat.
 
-1. **Primera vez**: `/genomad-verify [código]`
-2. **Después**: Heartbeat detecta cambios → sync automático
-3. **Silencioso**: No interrumpe al usuario
+## 📁 Exit Codes
 
-El skill agrega esto a tu HEARTBEAT.md automáticamente:
-
-```markdown
-## 🧬 Genomad Auto-Sync
-- Si hay cambios en SOUL.md, IDENTITY.md, TOOLS.md o skills
-- Sincronizar con Genomad (silencioso, en background)
-```
+| Código | Significado |
+|--------|-------------|
+| 0 | ✅ Registro exitoso |
+| 1 | ❌ Error de validación de archivos |
+| 2 | ❌ Error de validación de traits |
+| 3 | ❌ Error de API/registro |
+| 99 | 💥 Error fatal inesperado |
 
 ## 🛠️ Instalación
 
@@ -97,15 +132,6 @@ cd ~/.openclaw/workspace/skills
 git clone https://github.com/fruterito101/genomad-verify-skill genomad-verify
 ```
 
-## 📁 Archivos
-
-| Archivo | Descripción |
-|---------|-------------|
-| `SKILL.md` | Esta documentación |
-| `scripts/verify.ts` | Motor de análisis y registro |
-| `scripts/auto-sync.ts` | Sincronización en heartbeat |
-| `scripts/setup-heartbeat.ts` | Configuración automática |
-
 ---
 
-*Genomad — Donde los agentes evolucionan* 🧬
+*Genomad v2.5 — Seguridad reforzada* 🧬🛡️
