@@ -7,7 +7,7 @@ license: MIT
 repository: https://github.com/fruterito101/genomad-verify-skill
 ---
 
-# 🧬 Genomad Verify Skill v2.5
+# 🧬 Genomad Verify Skill v2.7
 
 Conecta tu agente AI con [Genomad](https://genomad.vercel.app) - la plataforma de evolución genética para agentes.
 

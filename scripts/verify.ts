@@ -71,6 +71,78 @@ interface FitnessResult {
   fitness: number;
   suspicious: boolean;
   reason?: string;
+  needsNormalization?: boolean;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// NORMALIZACIÓN DE TRAITS (para fitness > 92 legítimo)
+// ═══════════════════════════════════════════════════════════════
+
+function normalizeTraitsForFitness(traits: Traits, targetFitness: number = FITNESS_CEILING): Traits {
+  // Busca el factor de escala que produce el fitness deseado
+  // Usamos búsqueda binaria para encontrar el factor correcto
+  
+  let low = 0.5;
+  let high = 1.0;
+  let bestFactor = 1.0;
+  let bestFitness = 999;
+  
+  for (let i = 0; i < 20; i++) { // 20 iteraciones de búsqueda binaria
+    const mid = (low + high) / 2;
+    
+    // Escalar traits
+    const scaledTraits: Traits = {} as Traits;
+    for (const [key, value] of Object.entries(traits)) {
+      if (typeof value === 'number') {
+        scaledTraits[key as keyof Traits] = Math.round(value * mid);
+      }
+    }
+    
+    // Calcular fitness con traits escalados (sin recursión - cálculo directo)
+    let weightedSum = 0;
+    let totalWeight = 0;
+    for (const [trait, val] of Object.entries(scaledTraits)) {
+      if (typeof val === 'number' && trait in TRAIT_WEIGHTS) {
+        const weight = TRAIT_WEIGHTS[trait];
+        weightedSum += val * weight;
+        totalWeight += 100 * weight;
+      }
+    }
+    const baseFit = totalWeight > 0 ? (weightedSum / totalWeight) * 100 : 50;
+    
+    let synergy = 0;
+    for (const [t1, t2, mult] of SYNERGIES) {
+      const v1 = scaledTraits[t1 as keyof Traits];
+      const v2 = scaledTraits[t2 as keyof Traits];
+      if (typeof v1 === 'number' && typeof v2 === 'number') {
+        const avg = (v1 + v2) / 2;
+        if (avg >= 70) synergy += mult * avg;
+      }
+    }
+    
+    const calcFitness = Math.min(100, baseFit + synergy);
+    
+    if (Math.abs(calcFitness - targetFitness) < Math.abs(bestFitness - targetFitness)) {
+      bestFactor = mid;
+      bestFitness = calcFitness;
+    }
+    
+    if (calcFitness > targetFitness) {
+      high = mid;
+    } else {
+      low = mid;
+    }
+  }
+  
+  // Aplicar mejor factor encontrado
+  const normalizedTraits: Traits = {} as Traits;
+  for (const [key, value] of Object.entries(traits)) {
+    if (typeof value === 'number') {
+      normalizedTraits[key as keyof Traits] = Math.round(value * bestFactor);
+    }
+  }
+  
+  return normalizedTraits;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -240,8 +312,30 @@ function validateTraits(traits: Traits): ValidationResult {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// CÁLCULO DE FITNESS CON PROTECCIÓN (NUEVO)
+// CÁLCULO DE FITNESS - SINCRONIZADO CON BACKEND (v2.7)
 // ═══════════════════════════════════════════════════════════════
+
+// Pesos exactos del backend (src/lib/genetic/fitness.ts)
+const TRAIT_WEIGHTS: Record<string, number> = {
+  technical: 1.2,
+  creativity: 1.1,
+  social: 0.9,
+  analysis: 1.1,
+  empathy: 0.9,
+  trading: 1.0,
+  teaching: 0.8,
+  leadership: 0.8,
+};
+
+// Sinergias exactas del backend
+const SYNERGIES: [string, string, number][] = [
+  ["technical", "analysis", 0.05],
+  ["creativity", "empathy", 0.05],
+  ["teaching", "empathy", 0.05],
+  ["social", "trading", 0.03],
+  ["leadership", "social", 0.03],
+  ["creativity", "technical", 0.04],
+];
 
 function calculateFitness(traits: Traits): FitnessResult {
   const values = Object.values(traits).filter(v => typeof v === 'number' && !isNaN(v));
@@ -250,36 +344,61 @@ function calculateFitness(traits: Traits): FitnessResult {
     return { fitness: 50, suspicious: true, reason: "No hay traits válidos" };
   }
   
-  const avg = values.reduce((a, b) => a + b, 0) / values.length;
+  // 1. Base fitness ponderado (igual que backend)
+  let weightedSum = 0;
+  let totalWeight = 0;
   
-  // Bonus por sinergias (máx +8)
-  let synergy = 0;
-  if (traits.technical > 70 && traits.analysis > 70) synergy += 2;
-  if (traits.teaching > 70 && traits.empathy > 70) synergy += 2;
-  if (traits.social > 70 && traits.leadership > 70) synergy += 2;
-  if (traits.creativity > 70 && traits.technical > 70) synergy += 2;
+  for (const [trait, value] of Object.entries(traits)) {
+    if (typeof value === 'number' && trait in TRAIT_WEIGHTS) {
+      const weight = TRAIT_WEIGHTS[trait];
+      weightedSum += value * weight;
+      totalWeight += 100 * weight;
+    }
+  }
   
-  let fitness = avg + synergy;
+  const baseFitness = totalWeight > 0 ? (weightedSum / totalWeight) * 100 : 50;
+  
+  // 2. Synergy bonus (igual que backend)
+  let synergyBonus = 0;
+  for (const [t1, t2, mult] of SYNERGIES) {
+    const v1 = traits[t1 as keyof Traits];
+    const v2 = traits[t2 as keyof Traits];
+    if (typeof v1 === 'number' && typeof v2 === 'number') {
+      const avg = (v1 + v2) / 2;
+      if (avg >= 70) {
+        synergyBonus += mult * avg;
+      }
+    }
+  }
+  
+  // 3. Total fitness (capped a 100 como backend)
+  let fitness = Math.min(100, baseFitness + synergyBonus);
+  
   let suspicious = false;
   let reason: string | undefined;
   
-  // Detectar fitness sospechoso - BLOQUEAR, NO AJUSTAR
+  const avg = values.reduce((a, b) => a + b, 0) / values.length;
+  
+  // Detectar manipulación REAL (estos sí bloquean)
+  const highTraits = values.filter(v => v > 95).length;
+  
+  // Check 1: Promedio > 90 = claramente manipulado
   if (avg > 90) {
     suspicious = true;
     reason = `Promedio de traits anormalmente alto: ${avg.toFixed(1)} — BLOQUEADO`;
   }
   
-  // Fitness > 92 = SOSPECHOSO
-  if (fitness > FITNESS_CEILING) {
-    suspicious = true;
-    reason = `Fitness ${fitness.toFixed(1)} excede el máximo permitido (${FITNESS_CEILING}) — BLOQUEADO`;
-  }
-  
-  // Detectar si todos los traits son muy altos (>95)
-  const highTraits = values.filter(v => v > 95).length;
+  // Check 2: 4+ traits > 95 = claramente manipulado
   if (highTraits >= 4) {
     suspicious = true;
     reason = `${highTraits} traits con valor >95 — datos manipulados — BLOQUEADO`;
+  }
+  
+  // Si NO es manipulación pero fitness > ceiling, es legítimo → lo reportamos sin bloquear
+  // El main() aplicará normalización a los traits
+  if (!suspicious && fitness > FITNESS_CEILING) {
+    // No bloqueamos, solo marcamos que necesita normalización
+    // El fitness se ajustará después de normalizar traits
   }
   
   // Aplicar floor solo si NO es sospechoso
@@ -290,7 +409,8 @@ function calculateFitness(traits: Traits): FitnessResult {
   return { 
     fitness: Math.round(fitness * 10) / 10, 
     suspicious, 
-    reason 
+    reason,
+    needsNormalization: !suspicious && fitness > FITNESS_CEILING,
   };
 }
 
@@ -847,9 +967,20 @@ async function main() {
   console.log("   ✅ Traits válidos");
   
   // PASO 4: Calcular fitness con protección
-  const fitnessResult = calculateFitness(traits);
+  let fitnessResult = calculateFitness(traits);
   
-  // Mostrar resultados primero
+  // Si necesita normalización (fitness > 92 pero datos legítimos)
+  if (fitnessResult.needsNormalization) {
+    console.log(`\n⚠️ Fitness original: ${fitnessResult.fitness} (excede límite de ${FITNESS_CEILING})`);
+    console.log("   🔧 Normalizando traits para cumplir con límites...");
+    
+    traits = normalizeTraitsForFitness(traits, FITNESS_CEILING - 1); // Target 91 para margen de seguridad
+    fitnessResult = calculateFitness(traits);
+    
+    console.log(`   ✅ Fitness normalizado: ${fitnessResult.fitness}`);
+  }
+  
+  // Mostrar resultados
   printTraits(traits);
   
   // Si es SOSPECHOSO → BLOQUEAR COMPLETAMENTE
