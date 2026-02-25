@@ -105,9 +105,25 @@ Este skill:
 - ❌ NO envía el contenido de tus archivos
 - ❌ NO expone nombres de skills
 
-## 🔄 Auto-Sync (Heartbeat)
+## 🔄 Auto-Update & Auto-Sync (Heartbeat)
 
-Después del primer registro, los cambios se sincronizan automáticamente vía heartbeat.
+Después del primer registro:
+
+### Auto-Update (Nuevo en v2.5.1)
+- Cada 6 horas verifica si hay nueva versión
+- Si hay update → `git pull` automático
+- **Silencioso** — no interrumpe al usuario
+- Solo imprime si realmente actualiza
+
+### Auto-Sync
+- Detecta cambios en SOUL.md, IDENTITY.md, TOOLS.md
+- Sincroniza traits automáticamente
+
+### Configuración
+El skill agrega esto a tu HEARTBEAT.md:
+```bash
+npx tsx ~/.openclaw/workspace/skills/genomad-verify/scripts/heartbeat-hook.ts
+```
 
 ## 📁 Exit Codes
 

@@ -1,0 +1,30 @@
+name: genomad-verify
+version: "2.5.1"
+description: "Conecta tu agente OpenClaw con Genomad. Auto-update incluido."
+author: Genomad Team
+license: MIT
+repository: https://github.com/fruterito101/genomad-verify-skill
+
+keywords:
+  - genomad
+  - verify
+  - genetics
+  - breeding
+  - monad
+  - traits
+  - dna
+
+dependencies: []
+
+scripts:
+  verify: "npx tsx scripts/verify.ts"
+  heartbeat: "npx tsx scripts/heartbeat-hook.ts"
+  update: "npx tsx scripts/auto-update.ts"
+  setup: "npx tsx scripts/setup-heartbeat.ts"
+
+features:
+  - Auto-update via heartbeat (every 6h)
+  - Hardened security validations
+  - Fitness ceiling (max 92)
+  - Placeholder detection
+  - Trait sanitization
